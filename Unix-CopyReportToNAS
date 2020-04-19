@@ -1,0 +1,76 @@
+﻿#!/bin/sh
+
+#CopyReportToNas
+#6:00am Mon-Fri cron
+#Runtime < 1 minute
+ 
+OkayEmail="XXXXXXX@XXXXXX.com"
+NoGoEmail="XXXXXXX@XXXXXX.com"
+TestEmail="XXXXXXX@XXXXXX.com"
+ 
+function SendFiles {
+ftp -niv $Host > $Path/NAS190Report.log <<END_SCRIPT
+   quote USER $User
+   quote PASS $Pass
+   ascii
+   cd report190
+   lcd /d1/tools/report190
+   mput *
+   quit
+END_SCRIPT
+}
+ 
+function CheckTransfers {
+   Transfers="`grep -c 'Transfer complete' $Path/NAS190Report.log`"
+   cd /d1/tools/report190
+   TotalFiles="`ls -1 | wc -l`"
+   if test $Transfers -eq $TotalFiles; then
+      #Good
+      EmailAddress="$OkayEmail"
+      Subject="Subject: FTP /home/reports/Rep190.csv to NAS - Okay"
+      Message="XXXXX FTP /home/reports/Rep190.csv to NAS was successful."
+   else
+      #Bad
+      EmailAddress="$NoGoEmail"
+      mv $Path/NAS190Report.log $Path/Nas190Error.$$.txt
+      Subject="Subject: FTP /home/reports/Rep190.csv to NAS - Error"
+      Message="XXXXX FTP /home/reports/Rep190.csv to NAS was not successful. Che
+ck $Path/Nas190Error.$$.txt."
+   fi
+}
+ 
+WeekDay=`date "+%a"`
+CurrDay=`date "+%b %e"`
+Host=XX.XX.XX.XX
+User='XXXXX'
+Pass='XXXXXXX'
+Path=/d1/tools
+ 
+if [ -r /home/reports/Rep190.csv ] ; then
+   UpDated=`ll /home/reports/Rep190.csv | grep "$CurrDay"`
+   if [ "$UpDated" != "" ] ; then
+      cp -p /home/reports/Rep190.csv /d1/tools/report190/Rep190.csv
+      cp -p /d1/tools/report190/Rep190.csv /d1/tools/report190/$WeekDay-Rep190.csv
+      SendFiles
+      CheckTransfers
+   else
+      EmailAddress="$NoGoEmail"
+      Subject="Subject: File /home/reports/Rep190.csv is not updated"
+      Message="File /home/reports/Rep190.csv exits but is not curren
+t with todays date! Not copied to NAS!"
+   fi
+else
+   EmailAddress="$NoGoEmail"
+   Subject="Subject: File /home/reports/Rep190.csv does not exist"
+   Message="File /home/reports/Rep190.csv does not exist. Could not FTP to NAS."
+fi
+ 
+ 
+TmpFile=/tmp/email$$
+echo "MIME-Version: 1.0"                 >  $TmpFile
+echo "From: Erp Server <XXX@XXXXX.com>"  >> $TmpFile
+echo "To: MIS <$EmailAddress>"           >> $TmpFile
+echo $Subject                            >> $TmpFile
+echo $Message                            >> $TmpFile
+/usr/lib/sendmail -v $EmailAddress < $TmpFile > /dev/null
+rm $TmpFile
